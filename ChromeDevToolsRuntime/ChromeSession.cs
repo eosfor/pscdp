@@ -9,7 +9,9 @@ namespace BaristaLabs.ChromeDevTools.Runtime
     using System.Threading;
     using System.Threading.Tasks;
     using System.Threading.Tasks.Dataflow;
-    using WebSocket4Net;
+    //using WebSocket4Net;
+    using System.Net.WebSockets;
+    using System.Text;
 
     /// <summary>
     /// Represents a websocket connection to a running chrome instance that can be used to send commands and recieve events.
@@ -22,7 +24,10 @@ namespace BaristaLabs.ChromeDevTools.Runtime
         private readonly ConcurrentDictionary<Type, string> m_eventTypeMap = new ConcurrentDictionary<Type, string>();
 
         private ActionBlock<string> m_messageQueue;
-        private WebSocket m_sessionSocket;
+        private ClientWebSocket m_sessionSocket;
+        private Task m_receiveTask;
+        private CancellationTokenSource cts = new CancellationTokenSource();
+
         private ManualResetEventSlim m_openEvent = new ManualResetEventSlim(false);
         private ManualResetEventSlim m_responseReceived = new ManualResetEventSlim(false);
         private LastResponseInfo m_lastResponse;
@@ -71,18 +76,20 @@ namespace BaristaLabs.ChromeDevTools.Runtime
             m_endpointAddress = endpointAddress;
 
             m_messageQueue = new ActionBlock<string>((Action<string>)ProcessIncomingMessage,
-                new ExecutionDataflowBlockOptions {
+                new ExecutionDataflowBlockOptions
+                {
                     EnsureOrdered = true,
                     MaxDegreeOfParallelism = 1,
                 });
 
-            m_sessionSocket = new WebSocket(m_endpointAddress)
-            {
-                EnableAutoSendPing = false
-            };
-            m_sessionSocket.MessageReceived += Ws_MessageReceived;
-            m_sessionSocket.Error += Ws_Error;
-            m_sessionSocket.Opened += Ws_Opened;
+            // m_sessionSocket = new WebSocket(m_endpointAddress)
+            // {
+            //     EnableAutoSendPing = false
+            // };
+            // m_sessionSocket.MessageReceived += Ws_MessageReceived;
+            // m_sessionSocket.Error += Ws_Error;
+            // m_sessionSocket.Opened += Ws_Opened;
+            m_sessionSocket = new ClientWebSocket();
         }
 
         /// <summary>
@@ -148,24 +155,42 @@ namespace BaristaLabs.ChromeDevTools.Runtime
         [DebuggerStepThrough]
         public async Task<JToken> SendCommand(string commandName, JToken @params, CancellationToken cancellationToken = default(CancellationToken), int? millisecondsTimeout = null, bool throwExceptionIfResponseNotReceived = true)
         {
-            var message = new
+            var id = Interlocked.Increment(ref m_currentCommandId);
+
+            object message;
+            if (@params == null || (@params is JObject jObj && !jObj.HasValues))
             {
-                id = Interlocked.Increment(ref m_currentCommandId),
-                method = commandName,
-                @params = @params
-            };
+                message = new
+                {
+                    id = id,
+                    method = commandName
+                };
+            }
+            else
+            {
+                message = new
+                {
+                    id = id,
+                    method = commandName,
+                    @params = @params
+                };
+            }
 
             if (millisecondsTimeout.HasValue == false)
                 millisecondsTimeout = CommandTimeout;
 
             await OpenSessionConnection(cancellationToken);
 
-            LogTrace("Sending {id} {method}: {params}", message.id, message.method, @params.ToString());
-            
             var contents = JsonConvert.SerializeObject(message);
 
             m_responseReceived.Reset();
-            m_sessionSocket.Send(contents);
+            //m_sessionSocket.Send(contents);
+
+            LogTrace("Sending JSON {0}", contents);
+            byte[] bytes = Encoding.UTF8.GetBytes(contents);
+            await m_sessionSocket.SendAsync(bytes, WebSocketMessageType.Text, true, CancellationToken.None);
+
+            //await m_receiveTask;
 
             var responseWasReceived = await Task.Run(() => m_responseReceived.Wait(millisecondsTimeout.Value, cancellationToken));
 
@@ -181,13 +206,35 @@ namespace BaristaLabs.ChromeDevTools.Runtime
                 if (!String.IsNullOrWhiteSpace(errorData))
                     exceptionMessage = $"{exceptionMessage} - {errorData}";
 
-                LogTrace("Recieved Error Response {id}: {message} {data}", message.id, message, errorData);
+                LogTrace("Recieved Error Response {id}: {message} {data}", id, message, errorData);
                 throw new CommandResponseException(exceptionMessage)
                 {
                     Code = m_lastResponse.Result.Value<long>("code")
                 };
             }
             return m_lastResponse.Result;
+        }
+
+        public async Task ReceiveCommand(ClientWebSocket ws, CancellationToken cancellationToken = default)
+        {
+            var buffer = new byte[8192];
+
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                LogTrace("Waiting for message...");
+                var result = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), cancellationToken);
+                LogTrace("Message received: type={0}, count={1}", result.MessageType, result.Count);
+                if (result.MessageType == WebSocketMessageType.Close)
+                {
+                    LogTrace("WebSocket is closed");
+                    //Console.WriteLine("🔌 WebSocket закрыт.");
+                    break;
+                }
+
+                string json = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                LogTrace("Raw JSON message: {0}", json);
+                m_messageQueue.Post(json);
+            }
         }
 
         /// <summary>
@@ -225,9 +272,17 @@ namespace BaristaLabs.ChromeDevTools.Runtime
         {
             if (m_sessionSocket.State != WebSocketState.Open)
             {
-                m_sessionSocket.Open();
+                //m_sessionSocket.Open();
+                await m_sessionSocket.ConnectAsync(new Uri(m_endpointAddress), cancellationToken);
 
-                await Task.Run(() => m_openEvent.Wait(cancellationToken));
+                while (m_sessionSocket.State != WebSocketState.Open)
+                {
+                    LogTrace("Waiting for WebSocket to open...");
+                    await Task.Delay(10, cancellationToken);
+                }
+
+                m_receiveTask = ReceiveCommand(m_sessionSocket, cancellationToken);
+                //await Task.Run(() => m_openEvent.Wait(cancellationToken));
             }
         }
 
@@ -305,25 +360,25 @@ namespace BaristaLabs.ChromeDevTools.Runtime
 
 
         #region EventHandlers
-        private void Ws_Opened(object sender, EventArgs e)
-        {
-            m_openEvent.Set();
-        }
+        // private void Ws_Opened(object sender, EventArgs e)
+        // {
+        //     m_openEvent.Set();
+        // }
 
-        private void Ws_Error(object sender, SuperSocket.ClientEngine.ErrorEventArgs e)
-        {
-            LogError("Error: {exception}", e.Exception);
-            throw e.Exception;
-        }
+        // private void Ws_Error(object sender, SuperSocket.ClientEngine.ErrorEventArgs e)
+        // {
+        //     LogError("Error: {exception}", e.Exception);
+        //     throw e.Exception;
+        // }
 
-        private void Ws_MessageReceived(object sender, MessageReceivedEventArgs e)
-        {
-            //Add incoming messages to an ActionBlock so they can be processed sequentially.
-            if (m_messageQueue != null)
-            {
-                m_messageQueue.Post(e.Message);
-            }
-        }
+        // private void Ws_MessageReceived(object sender, MessageReceivedEventArgs e)
+        // {
+        //     //Add incoming messages to an ActionBlock so they can be processed sequentially.
+        //     if (m_messageQueue != null)
+        //     {
+        //         m_messageQueue.Post(e.Message);
+        //     }
+        // }
         #endregion
 
         #region IDisposable Support
@@ -341,9 +396,9 @@ namespace BaristaLabs.ChromeDevTools.Runtime
 
                     if (m_sessionSocket != null)
                     {
-                        m_sessionSocket.Opened -= Ws_Opened;
-                        m_sessionSocket.Error -= Ws_Error;
-                        m_sessionSocket.MessageReceived -= Ws_MessageReceived;
+                        // m_sessionSocket.Opened -= Ws_Opened;
+                        // m_sessionSocket.Error -= Ws_Error;
+                        // m_sessionSocket.MessageReceived -= Ws_MessageReceived;
                         m_sessionSocket.Dispose();
                         m_sessionSocket = null;
                     }

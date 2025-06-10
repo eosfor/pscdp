@@ -2,6 +2,7 @@ namespace BaristaLabs.ChromeDevTools.Runtime.Target
 {
     using System.Collections.Generic;
     using Newtonsoft.Json;
+    using System;
 
     /// <summary>
     /// The entries in TargetFilter are matched sequentially against targets and
