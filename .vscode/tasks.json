@@ -1,0 +1,29 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Start pwsh with module (inline)",
+      "type": "shell",
+      "command": "pwsh",
+      "args": [
+        "-NoExit",
+        "-Command",
+        "Import-Module '${workspaceFolder}/pscdp/bin/Debug/net9.0/publish/pscdp.dll' -Force; Write-Host 'PowerShell ready. Attach debugger now.'; $PID;"
+      ],
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "powershell",
+        "pattern": {
+          "regexp": "^(.*)$",
+          "file": 1,
+          "message": 1
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "PowerShell ready\\. Attach debugger now\\.",
+          "endsPattern": "PowerShell ready\\. Attach debugger now\\."
+        }
+      }
+    }
+  ]
+}
