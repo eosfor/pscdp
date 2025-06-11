@@ -12,119 +12,105 @@ using Newtonsoft.Json.Linq;
 using System.Threading.Tasks.Dataflow;
 using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
+using System.IO.Pipes;
+using System.Text;
+using quickcrawl;
 
 [Cmdlet(VerbsLifecycle.Start, "Crawling")]
 public class StartCrawlingCommand : PSCmdlet
 {
     [Parameter(Mandatory = true, Position = 0)]
+    public string? Url = "https://www.epam.com";
+
+    [Parameter(Position = 1)]
+    public int Depth = 5;
+
+    [Parameter(Position = 2)]
     [ValidateNotNullOrEmpty]
-    public string? Url;
+    public string? ChromeDebuggerUrl;
 
-    [Parameter(Mandatory = true, Position = 0)]
-    [ValidateNotNullOrEmpty]
-    public string? ChromeDubugSessionUrl;
+    [Parameter(Position = 3)]
+    public string? ExecutablePath = "/Users/andrei/repo/pscdp/quickcrawl/bin/Debug/net9.0/publish/quickcrawl";
 
-
-    private ActionBlock<string>? _messageQueue;
-    private ChromeSession? _session;
-    private CancellationTokenSource _shouldCancel = new CancellationTokenSource();
-
-    private readonly BlockingCollection<IEvent> _capturedEvents = new BlockingCollection<IEvent>();
-
-    private int _activeCount = 0;
-    private readonly ConcurrentDictionary<string, byte> _visited = new(StringComparer.OrdinalIgnoreCase);
-
-    protected override void ProcessRecord()
-    {
-        Interlocked.Increment(ref _activeCount);
-
-        if (_messageQueue != null)
-        {
-            _messageQueue.Post(Url);
-            _messageQueue.Completion.GetAwaiter().GetResult();
-        }
-        _shouldCancel.Cancel();
-
-        WriteObject(_capturedEvents, true);
-        _session.Dispose();
-    }
+    private Process? _crawlerProcess;
 
     protected override void BeginProcessing()
     {
-
         base.BeginProcessing();
 
-        _session = new ChromeSession(ChromeDubugSessionUrl);
-        _session.Network.Enable(new BaristaLabs.ChromeDevTools.Runtime.Network.EnableCommand()).GetAwaiter().GetResult();
-        _session.Page.Enable(new BaristaLabs.ChromeDevTools.Runtime.Page.EnableCommand(), cancellationToken: _shouldCancel.Token).GetAwaiter().GetResult();
-
-        _messageQueue = new ActionBlock<string>(ProcessIncomingUrl, new ExecutionDataflowBlockOptions
+        var path = ExecutablePath ?? Path.Combine(AppContext.BaseDirectory, "quickcrawl");
+        if (!File.Exists(path))
         {
-            MaxDegreeOfParallelism = 1,
-            BoundedCapacity = 1000
-        });
+            ThrowTerminatingError(new ErrorRecord(
+                new FileNotFoundException("quickcrawl executable not found", path),
+                "CrawlerNotFound",
+                ErrorCategory.ObjectNotFound,
+                path
+            ));
+        }
 
-        _session.Page.SubscribeToFrameNavigatedEvent((e) =>
+        _crawlerProcess = new Process
         {
-            _capturedEvents.TryAdd(e);
-        });
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = path,
+                Arguments = ChromeDebuggerUrl != null ? $"\"{ChromeDebuggerUrl}\"" : ""
+            }
+        };
 
-        _session.Network.SubscribeToRequestWillBeSentEvent((e) =>
-        {
-            _capturedEvents.TryAdd(e);
-        });
+        // _crawlerProcess.OutputDataReceived += (_, e) =>
+        // {
+        //     if (e.Data != null)
+        //         WriteVerbose($"[stdout] {e.Data}");
+        // };
+
+        // _crawlerProcess.ErrorDataReceived += (_, e) =>
+        // {
+        //     if (e.Data != null)
+        //         WriteWarning($"[stderr] {e.Data}");
+        // };
+
+        _crawlerProcess.Start();
+        // _crawlerProcess.BeginOutputReadLine();
+        // _crawlerProcess.BeginErrorReadLine();
+
+        WriteVerbose($"Started quickcrawl PID {_crawlerProcess.Id}");
     }
 
-    private void ProcessIncomingUrl(string url)
+    protected override void ProcessRecord()
     {
-        try
+        if (Url == null)
+            return;
+
+        WriteVerbose("Sending crawl command over pipe...");
+
+        using var pipe = new NamedPipeClientStream(".", "QuickCrawlCommandPipe", PipeDirection.Out);
+        pipe.Connect(5000); // timeout in ms
+
+        var command = new CrawlCommand
         {
-            var loadTcs = new TaskCompletionSource<bool>();
+            Url = Url,
+            Depth = Depth
+            //ChromeDebugUrl = ChromeDebuggerUrl
+        };
 
-            _session.Page.SubscribeToLoadEventFiredEvent( (e) =>
-            {
-                loadTcs.TrySetResult(true);
-            });
+        var json = JsonConvert.SerializeObject(command);
+        using var writer = new StreamWriter(pipe, Encoding.UTF8) { AutoFlush = true };
+        writer.Write(json);
 
-            _session.Page.Navigate(new NavigateCommand
-            {
-                Url = url
-            }, millisecondsTimeout: 60000, cancellationToken: _shouldCancel.Token).GetAwaiter().GetResult();
+        WriteVerbose("Crawl command sent.");
+    }
 
-            _visited.TryAdd(url, 0);
+    protected override void EndProcessing()
+    {
+        base.EndProcessing();
 
-            // Ждём загрузки страницы
-            loadTcs.Task.GetAwaiter().GetResult();
-
-            var evalResult = _session.Runtime.Evaluate(new BaristaLabs.ChromeDevTools.Runtime.Runtime.EvaluateCommand
-            {
-                Expression = @"Array.from(document.querySelectorAll('a')).map(a => a.href).filter(h => h.startsWith(location.origin))",
-                ReturnByValue = true
-            }).GetAwaiter().GetResult();
-
-            var urls = ((JArray)evalResult.Result.Value).ToObject<List<string>>();
-
-            if (urls == null || urls.Count == 0)
-            {
-                return;
-            }
-
-            foreach (var link in urls)
-            {
-                if (_visited.TryAdd(link, 0))
-                {
-                    Interlocked.Increment(ref _activeCount);
-                    _messageQueue.Post(link);
-                }
-            }
-        }
-        finally
+        if (_crawlerProcess != null && !_crawlerProcess.HasExited)
         {
-            var remaining = Interlocked.Decrement(ref _activeCount);
-            if (remaining == 0)
-            {
-                _messageQueue.Complete();
-            }
+            _crawlerProcess.Kill(true);
+            _crawlerProcess.Dispose();
+            WriteVerbose("quickcrawl process terminated.");
         }
     }
 }

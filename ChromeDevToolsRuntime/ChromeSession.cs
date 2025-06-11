@@ -217,7 +217,7 @@ namespace BaristaLabs.ChromeDevTools.Runtime
 
         public async Task ReceiveCommand(ClientWebSocket ws, CancellationToken cancellationToken = default)
         {
-            var buffer = new byte[8192];
+            var buffer = new byte[8192*2];
 
             while (!cancellationToken.IsCancellationRequested)
             {

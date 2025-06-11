@@ -5,6 +5,16 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "C#: quickcrawl Debug",
+            "type": "coreclr",
+            "request": "launch",
+            "program": "${workspaceFolder}/quickcrawl/bin/Debug/net9.0/quickcrawl",
+            "args": [
+                "http://localhost:9222/json"
+            ],
+            "cwd": "${workspaceFolder}/quickcrawl"
+        },
+        {
             "name": "Attach to pwsh",
             "type": "coreclr",
             "request": "attach",
