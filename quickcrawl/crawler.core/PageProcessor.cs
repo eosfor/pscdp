@@ -12,17 +12,18 @@ public class PageProcessor : IDisposable
 
     private string _url { get; set; }
     private ChromeSession? _session;
-    private DevToolsTarget? _target;
-    private ILogger<PageProcessor> _logger; // Assuming you have a logger injected or set up elsewhere
+    private DevToolsTarget? _browserTabTarget;
+    private ILogger<PageProcessor> _logger;
 
     private CancellationTokenSource _shouldCancel = new CancellationTokenSource();
 
     private ConcurrentDictionary<long, Node> _nodeDictionary = new ConcurrentDictionary<long, Node>();
 
-    private readonly ConcurrentDictionary<string, TrackedRequest> _activeRequests = new();
-    private DateTime _lastNetworkActivity;
-    private const int NetworkIdleTimeoutMs = 2000;
-    private const int MaxInflightRequests = 0;
+    private TaskCompletionSource<bool>? _pageLoadEventFlag;
+
+    private ConcurrentBag<IEvent> _capturedEvents = new ConcurrentBag<IEvent>();
+
+    public List<IEvent> CapturedEvents => _capturedEvents.ToList();
 
     public PageProcessor(string url)
     {
@@ -40,14 +41,14 @@ public class PageProcessor : IDisposable
     private async Task OpenChromeSessionAsync()
     {
         _logger.LogDebug("Opening new Chrome session for URL: {Url}", _url);
-        _target = await BrowserController.NewBrowserTab();
-        if (_target == null || string.IsNullOrEmpty(_target.Id) || string.IsNullOrEmpty(_target.WebSocketDebuggerUrl))
+        _browserTabTarget = await BrowserController.NewBrowserTab();
+        if (_browserTabTarget == null || string.IsNullOrEmpty(_browserTabTarget.Id) || string.IsNullOrEmpty(_browserTabTarget.WebSocketDebuggerUrl))
         {
             throw new Exception("Failed to create new browser tab.");
         }
 
-        _logger.LogDebug("New Chrome session opened with ID: {Id} and WebSocket URL: {WebSocketDebuggerUrl}", _target.Id, _target.WebSocketDebuggerUrl);
-        _session = new ChromeSession(_target.WebSocketDebuggerUrl);
+        _logger.LogDebug("New Chrome session opened with ID: {Id} and WebSocket URL: {WebSocketDebuggerUrl}", _browserTabTarget.Id, _browserTabTarget.WebSocketDebuggerUrl);
+        _session = new ChromeSession(_browserTabTarget.WebSocketDebuggerUrl);
 
         await _session.Network.Enable(new BaristaLabs.ChromeDevTools.Runtime.Network.EnableCommand(), cancellationToken: _shouldCancel.Token);
         await _session.Page.Enable(new BaristaLabs.ChromeDevTools.Runtime.Page.EnableCommand(), cancellationToken: _shouldCancel.Token);
@@ -75,12 +76,10 @@ public class PageProcessor : IDisposable
             Url = _url
         }, millisecondsTimeout: 60000, cancellationToken: _shouldCancel.Token);
 
-        //TODO: Add logic to wait for the page to load completely, if necessary.
-        await Task.Delay(6000);
+        await WaitForPageLoadAsync(TimeSpan.FromSeconds(30));
 
         var links = await ExtractLinksFromPage();
         return links;
-
     }
 
 
@@ -139,43 +138,28 @@ public class PageProcessor : IDisposable
         return links;
     }
 
-    private async Task WaitForNetworkIdleAsync(int timeoutMs = NetworkIdleTimeoutMs, int maxRequestAgeMs = 6000, CancellationToken cancellationToken = default)
+    private async Task WaitForNetworkIdleAsync(int timeoutMs = 2000, int maxRequestAgeMs = 6000, CancellationToken cancellationToken = default)
     {
-        _logger.LogDebug("Waiting for network to become idle...");
-        var idleSince = DateTime.UtcNow;
+        throw new NotImplementedException("Network idle detection is not implemented yet.");
+    }
 
-        while (true)
-        {
-            if (cancellationToken.IsCancellationRequested)
-                break;
+    private async Task WaitForPageLoadAsync(TimeSpan timeout)
+    {
+        if (_pageLoadEventFlag == null)
+            throw new InvalidOperationException("Loading was not started.");
 
-            var now = DateTime.UtcNow;
+        using var cts = new CancellationTokenSource(timeout);
+        await Task.WhenAny(_pageLoadEventFlag.Task, Task.Delay(Timeout.Infinite, cts.Token));
 
-            // cleanup stuck requests
-            foreach (var kvp in _activeRequests)
-            {
-                var age = (now - kvp.Value.Started).TotalMilliseconds;
-                if (age > maxRequestAgeMs)
-                {
-                    _activeRequests.TryRemove(kvp.Key, out _);
-                    _logger.LogWarning("Request {RequestId} has been active for too long ({Age} ms), removing it from active requests.", kvp.Key, age);
-                }
-            }
+        if (!_pageLoadEventFlag.Task.IsCompleted)
+            throw new TimeoutException("Page load timed out.");
 
-            var inflight = _activeRequests.Count;
-
-            if (inflight <= MaxInflightRequests &&
-                (now - _lastNetworkActivity).TotalMilliseconds >= timeoutMs)
-            {
-                return;
-            }
-
-            await Task.Delay(100, cancellationToken);
-        }
+        await _pageLoadEventFlag.Task; // throws if faulted or canceled
     }
 
     private void OnSetChildNodesEvent(SetChildNodesEvent e)
     {
+        _capturedEvents.Add(e);
         foreach (var node in e.Nodes)
         {
             _nodeDictionary.AddOrUpdate(node.NodeId, node, (id, previousNode) => node);
@@ -184,12 +168,14 @@ public class PageProcessor : IDisposable
 
     private void OnDocumentUpdated(DocumentUpdatedEvent e)
     {
+        _capturedEvents.Add(e);
         _nodeDictionary.Clear();
         _nodeDictionary.Clear();
     }
 
     private void OnRequestFinished(LoadingFinishedEvent e)
     {
+        _capturedEvents.Add(e);
         string json = JsonConvert.SerializeObject(e, Formatting.Indented);
         _logger.LogDebug("Request finished:\n{Json}", json);
         //throw new NotImplementedException();
@@ -197,6 +183,7 @@ public class PageProcessor : IDisposable
 
     private void OnRequestStarted(RequestWillBeSentEvent e)
     {
+        _capturedEvents.Add(e);
         string json = JsonConvert.SerializeObject(e, Formatting.Indented);
         _logger.LogDebug("Request started:\n{Json}", json);
         //throw new NotImplementedException();
@@ -204,13 +191,17 @@ public class PageProcessor : IDisposable
 
     private void OnFrameStoppedLoadingAsync(FrameStoppedLoadingEvent e)
     {
+        _capturedEvents.Add(e);
         string json = JsonConvert.SerializeObject(e, Formatting.Indented);
         _logger.LogDebug("Frame stopped loading:\n{Json}", json);
+        _pageLoadEventFlag?.TrySetResult(true);
         //throw new NotImplementedException();
     }
 
     private void OnFrameStartedLoadingAsync(FrameStartedLoadingEvent e)
     {
+        _capturedEvents.Add(e);
+        _pageLoadEventFlag = new(TaskCreationOptions.RunContinuationsAsynchronously);
         string json = JsonConvert.SerializeObject(e, Formatting.Indented);
         _logger.LogDebug("Frame started loading:\n{Json}", json);
         //throw new NotImplementedException();
@@ -218,6 +209,7 @@ public class PageProcessor : IDisposable
 
     private void OnLoadEventFiredEventAsync(LoadEventFiredEvent e)
     {
+        _capturedEvents.Add(e);
         string json = JsonConvert.SerializeObject(e, Formatting.Indented);
         _logger.LogDebug("Load event fired:\n{Json}", json);
         //throw new NotImplementedException();
@@ -225,6 +217,7 @@ public class PageProcessor : IDisposable
 
     private void OnFrameNavigatedAsync(FrameNavigatedEvent e)
     {
+        _capturedEvents.Add(e);
         string json = JsonConvert.SerializeObject(e, Formatting.Indented);
         _logger.LogDebug("Frame navigated:\n{Json}", json);
         //throw new NotImplementedException();
@@ -232,11 +225,13 @@ public class PageProcessor : IDisposable
 
     public void Dispose()
     {
-        if (_target?.Id != null)
+        if (_browserTabTarget?.Id != null)
         {
-            BrowserController.CloseBrowserTab(_target.Id).GetAwaiter().GetResult();
+            BrowserController.CloseBrowserTab(_browserTabTarget.Id).GetAwaiter().GetResult();
         }
         _shouldCancel.Cancel();
+        _capturedEvents.Clear();
+        _nodeDictionary.Clear();
         _session?.Dispose();
     }
 }

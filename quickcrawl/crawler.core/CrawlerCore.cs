@@ -8,39 +8,39 @@ using Microsoft.Extensions.Logging;
 using System.Threading.Tasks.Dataflow;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using Xunit;
 
 public class QuickCrawler
 {
     private ActionBlock<CrawlTarget>? _messageQueue;
     private CancellationTokenSource _shouldCancel = new CancellationTokenSource();
-
-    private readonly BlockingCollection<IEvent> _capturedEvents = new BlockingCollection<IEvent>();
-
-    private int _activeCount = 0;
     private readonly ConcurrentDictionary<string, int> _visited = new(StringComparer.OrdinalIgnoreCase);
-
-    private int _maxDepth = 10; // default
-    private int _maxReachedDepth = 0; // default
-    private readonly ConcurrentDictionary<string, TrackedRequest> _activeRequests = new();
-
-    public event Action<IEvent>? OnEventCaptured;
-
-    record CrawlTarget(string Url, int Depth);
-
+    private ConcurrentBag<ProcessedUrlData> _capturedEvents = new ConcurrentBag<ProcessedUrlData>();
     private ILogger<QuickCrawler> _logger;
+
+    public List<ProcessedUrlData> CapturedEvents => _capturedEvents.ToList();
+
+    // Configuration parameters
+    //TODO: make these configurable via constructor or properties or from outside
+    private int _maxDepth = 10;
+    private int _maxReachedDepth = 0;
+
+    private int _maxDegreeOfParallelism = 4;
+    private int _boundedCapacity = 1000;
+
+    public ConcurrentDictionary<string, int> VisitedUrls => _visited;
 
     public QuickCrawler(ILogger<QuickCrawler>? logger = null)
     {
         _logger = logger ?? LoggerFactory
             .Create(builder => builder.AddConsole().SetMinimumLevel(LogLevel.Debug))
             .CreateLogger<QuickCrawler>();
-            
-        //_logger = LoggerFactory.Create(builder => builder.AddConsole().SetMinimumLevel(LogLevel.Debug)).CreateLogger<QuickCrawler>();
+
         _messageQueue = new ActionBlock<CrawlTarget>(ProcessUrl, new ExecutionDataflowBlockOptions
         {
-            MaxDegreeOfParallelism = 10, //Environment.ProcessorCount,
+            MaxDegreeOfParallelism = _maxDegreeOfParallelism,
             CancellationToken = _shouldCancel.Token,
-            BoundedCapacity = 1000 // Limit the number of messages in the queue
+            BoundedCapacity = _boundedCapacity
         });
 
         _messageQueue.Completion.ContinueWith(t =>
@@ -78,11 +78,6 @@ public class QuickCrawler
         }
     }
 
-    public void Dispose()
-    {
-        _capturedEvents?.Dispose();
-        _shouldCancel?.Dispose();
-    }
 
     // Method to process incoming URLs for the ActionBlock
     private async Task ProcessUrl(CrawlTarget target)
@@ -103,6 +98,10 @@ public class QuickCrawler
         {
             using var processor = new PageProcessor(target.Url);
             var links = await processor.ProcessPageAsync();
+            var events = processor.CapturedEvents;
+
+            var processedData = new ProcessedUrlData(target.Url, events);
+            _capturedEvents.Add(processedData);
 
             foreach (var link in links)
             {
@@ -130,5 +129,10 @@ public class QuickCrawler
 
         _logger.LogInformation("Finished processing URL: {Url} at depth {Depth}", target.Url, target.Depth);
         _logger.LogInformation("Max reached depth {Depth}", _maxReachedDepth);
+    }
+
+    public void Dispose()
+    {
+        _shouldCancel?.Dispose();
     }
 }

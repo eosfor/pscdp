@@ -4,6 +4,7 @@ using FluentAssertions;
 using Xunit.Abstractions;
 using Microsoft.Extensions.Logging;
 using quickcrawl.core;
+using System.Diagnostics.Tracing;
 
 namespace quickcrawl.tests;
 
@@ -32,9 +33,11 @@ public class QuickCrawlerIntegrationTests
         //await Task.Delay(120000); // дать время на асинхронную работу
         //crawler.StopCrawling();
         await crawler.WaitForCompletionAsync();
+        var events = crawler.CapturedEvents;
 
         // Assert
-        // Просто факт завершения без исключений — уже успех для интеграционного теста
+        events.Should().NotBeNull();
+        events.Should().NotBeEmpty();
         crawler.Dispose();
     }
 }
