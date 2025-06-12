@@ -24,8 +24,8 @@ public class QuickCrawlerIntegrationTests
     public async Task Should_Crawl_Page_And_Follow_Links()
     {
         // Arrange
-        var crawler = new QuickCrawler();
-        var testUrl = "https://www.epam.com";
+        var crawler = new QuickCrawler(_logger);
+        var testUrl = "https://azazello.darkcity.dev";
 
         // Act
         await crawler.StartCrawling(testUrl, maxDepth: 2);

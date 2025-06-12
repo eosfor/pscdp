@@ -83,19 +83,6 @@ public class PageProcessor : IDisposable
 
     }
 
-    private void OnSetChildNodesEvent(SetChildNodesEvent e)
-    {
-        foreach (var node in e.Nodes)
-        {
-            _nodeDictionary.AddOrUpdate(node.NodeId, node, (id, previousNode) => node);
-        }
-    }
-
-    private void OnDocumentUpdated(DocumentUpdatedEvent e)
-    {
-        _nodeDictionary.Clear();
-        _nodeDictionary.Clear();
-    }
 
     private async Task<List<string>> ExtractLinksFromPage()
     {
@@ -116,12 +103,31 @@ public class PageProcessor : IDisposable
 
         foreach (var nodeId in anchorNodes.NodeIds)
         {
-            var node = _nodeDictionary[nodeId];
-            var link = node.Attributes?.SkipWhile(attr => attr != "href")
-                .Skip(1) // Skip the "href" attribute itself
-                .FirstOrDefault(attr => attr.StartsWith("http", StringComparison.OrdinalIgnoreCase));
-            if (!string.IsNullOrEmpty(link))
+            Node node;
+            try
             {
+                node = _nodeDictionary[nodeId];
+            }
+            catch (KeyNotFoundException)
+            {
+                _logger.LogWarning("Node with ID {NodeId} not found in the node dictionary.", nodeId);
+                continue;
+            }
+
+
+            _logger.LogDebug("Processing node with ID: {NodeId}", nodeId);
+
+            var href = node.Attributes?
+                .SkipWhile(attr => attr != "href")
+                .Skip(1)
+                .FirstOrDefault();
+
+            if (!string.IsNullOrEmpty(href))
+            {
+                var baseUri = new Uri(_url);
+                var fullUri = new Uri(baseUri, href);
+                var link = fullUri.GetLeftPart(UriPartial.Path);
+
                 links.Add(link);
                 _logger.LogDebug("Found link: {Link}", link);
             }
@@ -168,6 +174,19 @@ public class PageProcessor : IDisposable
         }
     }
 
+    private void OnSetChildNodesEvent(SetChildNodesEvent e)
+    {
+        foreach (var node in e.Nodes)
+        {
+            _nodeDictionary.AddOrUpdate(node.NodeId, node, (id, previousNode) => node);
+        }
+    }
+
+    private void OnDocumentUpdated(DocumentUpdatedEvent e)
+    {
+        _nodeDictionary.Clear();
+        _nodeDictionary.Clear();
+    }
 
     private void OnRequestFinished(LoadingFinishedEvent e)
     {

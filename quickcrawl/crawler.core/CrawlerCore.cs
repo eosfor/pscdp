@@ -29,9 +29,13 @@ public class QuickCrawler
 
     private ILogger<QuickCrawler> _logger;
 
-    public QuickCrawler()
+    public QuickCrawler(ILogger<QuickCrawler>? logger = null)
     {
-        _logger = LoggerFactory.Create(builder => builder.AddConsole().SetMinimumLevel(LogLevel.Debug)).CreateLogger<QuickCrawler>();
+        _logger = logger ?? LoggerFactory
+            .Create(builder => builder.AddConsole().SetMinimumLevel(LogLevel.Debug))
+            .CreateLogger<QuickCrawler>();
+            
+        //_logger = LoggerFactory.Create(builder => builder.AddConsole().SetMinimumLevel(LogLevel.Debug)).CreateLogger<QuickCrawler>();
         _messageQueue = new ActionBlock<CrawlTarget>(ProcessUrl, new ExecutionDataflowBlockOptions
         {
             MaxDegreeOfParallelism = 10, //Environment.ProcessorCount,
@@ -52,6 +56,7 @@ public class QuickCrawler
         }, TaskContinuationOptions.ExecuteSynchronously);
         _logger.LogInformation("QuickCrawler initialized.");
     }
+
 
     public async Task StartCrawling(string Url, int maxDepth = 10)
     {
