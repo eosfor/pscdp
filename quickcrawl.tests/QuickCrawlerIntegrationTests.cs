@@ -29,15 +29,19 @@ public class QuickCrawlerIntegrationTests
         var testUrl = "https://azazello.darkcity.dev";
 
         // Act
-        await crawler.StartCrawling(testUrl, maxDepth: 2);
+        crawler.StartCrawling(testUrl, maxDepth: 1);
         //await Task.Delay(120000); // дать время на асинхронную работу
         //crawler.StopCrawling();
         await crawler.WaitForCompletionAsync();
         var events = crawler.CapturedEvents;
+        var graph = crawler.Graph;
 
         // Assert
         events.Should().NotBeNull();
         events.Should().NotBeEmpty();
+        graph.Should().NotBeNull();
+        graph.Vertices.Should().NotBeEmpty();
+        graph.Edges.Should().NotBeEmpty();
         crawler.Dispose();
     }
 }

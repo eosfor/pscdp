@@ -13,11 +13,11 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.6" />
     <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="9.0.6" />
     <PackageReference Include="System.Threading.Tasks.Dataflow" Version="9.0.5" />
-    <PackageReference Include="xUnit" Version="2.9.3" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\ChromeDevToolsRuntime\BaristaLabs.ChromeDevTools.Runtime.csproj" />
+    <ProjectReference Include="..\..\PSGraph\PSGraph.Common\PSGraph.Common.csproj" />
   </ItemGroup>
 
 </Project>

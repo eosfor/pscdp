@@ -8,7 +8,8 @@ using quickcrawl.core; // Assuming you have a CrawlerCore class in your project
 public class StartCrawlingCommand : PSCmdlet
 {
     [Parameter(Mandatory = true, Position = 0)]
-    public string? Url = "https://www.epam.com";
+    [ValidateNotNullOrEmpty]
+    public string? Url;
 
     [Parameter(Position = 1)]
     public int Depth = 5;
@@ -20,26 +21,30 @@ public class StartCrawlingCommand : PSCmdlet
 
     }
 
+    private QuickCrawler _crawler;
+
     protected override void ProcessRecord()
     {
-        var crawler = new QuickCrawler();
-        var testUrl = "https://azazello.darkcity.dev";
+        var _crawler = new QuickCrawler();
 
         // Act
-        crawler.StartCrawling(testUrl, maxDepth: 2).GetAwaiter().GetResult();
-        //await Task.Delay(120000); // дать время на асинхронную работу
-        //crawler.StopCrawling();
-        crawler.WaitForCompletionAsync().GetAwaiter().GetResult();
+        _crawler.StartCrawling(Url, maxDepth: Depth);
+        _crawler.WaitForCompletionAsync().GetAwaiter().GetResult();
 
-        WriteObject(crawler.CapturedEvents, true);
+        WriteObject(_crawler.Graph, false);
 
-        // Assert
-        // Просто факт завершения без исключений — уже успех для интеграционного теста
-        crawler.Dispose();
+        //_crawler.Dispose();
     }
 
     protected override void EndProcessing()
     {
         base.EndProcessing();
+    }
+
+    protected override void StopProcessing()
+    {
+        base.StopProcessing();
+        // Handle any cleanup if necessary
+        _crawler?.StopCrawling();
     }
 }

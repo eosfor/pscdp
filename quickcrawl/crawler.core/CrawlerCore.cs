@@ -2,13 +2,11 @@ namespace quickcrawl.core;
 
 using System;
 using System.Threading.Tasks;
-using BaristaLabs.ChromeDevTools.Runtime;
-using BaristaLabs.ChromeDevTools.Runtime.Page;
 using Microsoft.Extensions.Logging;
 using System.Threading.Tasks.Dataflow;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using Xunit;
+using PSGraph.Model;
 
 public class QuickCrawler
 {
@@ -17,8 +15,12 @@ public class QuickCrawler
     private readonly ConcurrentDictionary<string, int> _visited = new(StringComparer.OrdinalIgnoreCase);
     private ConcurrentBag<ProcessedUrlData> _capturedEvents = new ConcurrentBag<ProcessedUrlData>();
     private ILogger<QuickCrawler> _logger;
+    private PSGraph.Model.PsBidirectionalGraph _graph = new PSGraph.Model.PsBidirectionalGraph();
 
     public List<ProcessedUrlData> CapturedEvents => _capturedEvents.ToList();
+    public PsBidirectionalGraph Graph => _graph;
+
+    private Uri _baseUri;
 
     // Configuration parameters
     //TODO: make these configurable via constructor or properties or from outside
@@ -58,11 +60,11 @@ public class QuickCrawler
     }
 
 
-    public async Task StartCrawling(string Url, int maxDepth = 10)
+    public void StartCrawling(string Url, int maxDepth = 10)
     {
+        _baseUri = new Uri(Url);
         _maxDepth = maxDepth;
         _messageQueue?.Post(new CrawlTarget(Url, 0));
-        await Task.CompletedTask;
     }
 
     public void StopCrawling()
@@ -85,15 +87,17 @@ public class QuickCrawler
         if (target.Depth >= _maxDepth)
         {
             _logger.LogInformation("Reached maximum depth for URL: {Url}", target.Url);
-            _messageQueue?.Complete();
+            //_messageQueue?.Complete();
             return;
         }
         _logger.LogInformation("Processing URL: {Url} at depth {Depth}", target.Url, target.Depth);
         if (_visited.ContainsKey(target.Url))
         {
-            _logger.LogInformation("URL already visited: {Url}", target.Url);
+            _logger.LogInformation("URL already visited, skipping processing: {Url}", target.Url);
             return;
         }
+
+        int nextDepth = 0;
         try
         {
             using var processor = new PageProcessor(target.Url);
@@ -103,19 +107,41 @@ public class QuickCrawler
             var processedData = new ProcessedUrlData(target.Url, events);
             _capturedEvents.Add(processedData);
 
-            foreach (var link in links)
+            var graphSourceNode = new PSVertex(target.Url);
+            _graph.AddVertex(graphSourceNode);
+
+            foreach (var rawLink in links)
             {
-                _messageQueue?.Post(new CrawlTarget(link, target.Depth + 1));
+                var normalizedLink = NormalizeLink(rawLink);
+                nextDepth = IsInternalLink(normalizedLink, _baseUri) ? target.Depth : target.Depth + 1;
+
+                if (_visited.ContainsKey(normalizedLink))
+                {
+                    _logger.LogInformation("URL already visited, skip adding a task for processing: {Url}", normalizedLink);
+                    continue;
+                }
+
+                _messageQueue?.Post(new CrawlTarget(normalizedLink, nextDepth));
+
+                var newVertex = new PSVertex(normalizedLink);
+                var newEdge = new PSEdge(graphSourceNode, newVertex, new PSEdgeTag("CrawlEdge"));
+
+                var addOpResult = _graph.AddVertex(newVertex);
+                _logger.LogInformation("Adding vertex {v}: {result}", newVertex, addOpResult);
+
+                addOpResult = _graph.AddEdge(newEdge);
+                _logger.LogInformation("Adding edge from {Source} to {Target}: {result}", graphSourceNode, newVertex, addOpResult);
             }
+
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error processing URL: {Url}", target.Url);
+            _logger.LogError(ex, "Processing URL: {Url} failed with: {exception}", target.Url, ex.Message);
             return;
         }
         finally
         {
-            _visited.TryAdd(target.Url, target.Depth);
+            _visited.TryAdd(target.Url, nextDepth);
         }
 
         int prev;
@@ -129,6 +155,21 @@ public class QuickCrawler
 
         _logger.LogInformation("Finished processing URL: {Url} at depth {Depth}", target.Url, target.Depth);
         _logger.LogInformation("Max reached depth {Depth}", _maxReachedDepth);
+    }
+
+    private bool IsInternalLink(string link, Uri baseUri)
+    {
+        if (!Uri.TryCreate(link, UriKind.Absolute, out var uri))
+            return false;
+
+        return uri.Host.Equals(baseUri.Host, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private string NormalizeLink(string url)
+    {
+        if (Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            return uri.GetLeftPart(UriPartial.Path).TrimEnd('/');
+        return url;
     }
 
     public void Dispose()
