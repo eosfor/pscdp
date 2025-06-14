@@ -23,7 +23,7 @@ public class PageProcessorIntegrationTests : IDisposable
     [Fact]
     public async Task Should_Open_Page_And_Trigger_Event_Handlers()
     {
-        var testUrl = "https://www.epam.com";
+        var testUrl = "https://azazello.darkcity.dev";
         var processor = new PageProcessor(testUrl, _logger);
 
         var links = await processor.ProcessPageAsync();

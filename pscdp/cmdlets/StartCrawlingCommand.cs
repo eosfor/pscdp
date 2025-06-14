@@ -12,7 +12,7 @@ public class StartCrawlingCommand : PSCmdlet
     public string? Url;
 
     [Parameter(Position = 1)]
-    public int Depth = 5;
+    public int Depth = 0;
 
     protected override void BeginProcessing()
     {
