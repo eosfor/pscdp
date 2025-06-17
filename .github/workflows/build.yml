@@ -27,5 +27,5 @@ jobs:
       - name: Build
         run: dotnet build --configuration Debug
       - name: Test
-        run: dotnet test --verbosity normal
+        run: .devcontainer/start-chromium.sh && dotnet test --verbosity normal
 

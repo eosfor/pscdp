@@ -5,8 +5,7 @@
 	// Or use a Dockerfile or Docker Compose file. More info: https://containers.dev/guide/dockerfile
 	"image": "mcr.microsoft.com/devcontainers/dotnet:1-9.0-bookworm",
 	"features": {
-		"ghcr.io/devcontainers/features/powershell:1": {},
-		"ghcr.io/kreemer/features/chrometesting:1": {}
+		"ghcr.io/devcontainers/features/powershell:1": {}
 	},
 
 	// Configure tool-specific properties.
@@ -26,8 +25,7 @@
 				"gruntfuggly.todo-tree"
 			]
 		}
-	}
-
-	// Uncomment to connect as root instead. More info: https://aka.ms/dev-containers-non-root.
-	// "remoteUser": "root"
+	},
+	"remoteUser": "root",
+	"postCreateCommand": "apt-get update && apt-get install -y chromium && chmod +x .devcontainer/start-chromium.sh"
 }
