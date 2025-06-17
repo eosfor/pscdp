@@ -9,7 +9,6 @@ namespace BaristaLabs.ChromeDevTools.Runtime
     using System.Threading;
     using System.Threading.Tasks;
     using System.Threading.Tasks.Dataflow;
-    //using WebSocket4Net;
     using System.Net.WebSockets;
     using System.Text;
 
@@ -358,29 +357,6 @@ namespace BaristaLabs.ChromeDevTools.Runtime
             m_logger.LogError(message, args);
         }
 
-
-        #region EventHandlers
-        // private void Ws_Opened(object sender, EventArgs e)
-        // {
-        //     m_openEvent.Set();
-        // }
-
-        // private void Ws_Error(object sender, SuperSocket.ClientEngine.ErrorEventArgs e)
-        // {
-        //     LogError("Error: {exception}", e.Exception);
-        //     throw e.Exception;
-        // }
-
-        // private void Ws_MessageReceived(object sender, MessageReceivedEventArgs e)
-        // {
-        //     //Add incoming messages to an ActionBlock so they can be processed sequentially.
-        //     if (m_messageQueue != null)
-        //     {
-        //         m_messageQueue.Post(e.Message);
-        //     }
-        // }
-        #endregion
-
         #region IDisposable Support
         private bool m_isDisposed = false;
 
@@ -396,9 +372,6 @@ namespace BaristaLabs.ChromeDevTools.Runtime
 
                     if (m_sessionSocket != null)
                     {
-                        // m_sessionSocket.Opened -= Ws_Opened;
-                        // m_sessionSocket.Error -= Ws_Error;
-                        // m_sessionSocket.MessageReceived -= Ws_MessageReceived;
                         m_sessionSocket.Dispose();
                         m_sessionSocket = null;
                     }
