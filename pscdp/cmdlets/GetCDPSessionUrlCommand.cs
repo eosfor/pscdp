@@ -16,19 +16,6 @@ public class GetCDPSessionUrlCommand : PSCmdlet
         string listJson = httpClient.GetStringAsync(ChromeSessionUrl).GetAwaiter().GetResult();
         var pages = JsonConvert.DeserializeObject<List<DevToolsTarget>>(listJson);
 
-
-        // if (pages == null || pages.Count == 0)
-        // {
-        //     var errorRecord = new ErrorRecord(
-        //         new Exception("Did not find any CDP pages, please check if Chromium/Chrome is running with --remote-debugging-port=9222."),
-        //         "NoCDPPagesFound",
-        //         ErrorCategory.ObjectNotFound,
-        //         null
-        //     );
-        //     WriteError(errorRecord);
-        //     return;
-        // }
-
         WriteObject(pages, true);
     }
 }

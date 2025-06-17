@@ -3,6 +3,7 @@
 using System.Management.Automation;
 using System.Diagnostics;
 using quickcrawl.core; // Assuming you have a CrawlerCore class in your project
+using quickcrawl;
 
 [Cmdlet(VerbsLifecycle.Start, "Crawling")]
 public class StartCrawlingCommand : PSCmdlet
@@ -14,26 +15,21 @@ public class StartCrawlingCommand : PSCmdlet
     [Parameter(Position = 1)]
     public int Depth = 0;
 
+    private QuickCrawler _crawler;
+
     protected override void BeginProcessing()
     {
         base.BeginProcessing();
-
-
+        _crawler = new QuickCrawler();
     }
 
-    private QuickCrawler _crawler;
 
     protected override void ProcessRecord()
     {
-        var _crawler = new QuickCrawler();
-
-        // Act
         _crawler.StartCrawling(Url, maxDepth: Depth);
         _crawler.WaitForCompletionAsync().GetAwaiter().GetResult();
 
-        WriteObject(_crawler.Graph, false);
-
-        //_crawler.Dispose();
+        WriteObject(new Result(_crawler.Graph, _crawler.CapturedEvents), false);
     }
 
     protected override void EndProcessing()

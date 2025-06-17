@@ -5,6 +5,8 @@ using Xunit.Abstractions;
 using Microsoft.Extensions.Logging;
 using quickcrawl.core;
 using System.Diagnostics.Tracing;
+using Newtonsoft.Json.Linq;
+using PSGraph.Model;
 
 namespace quickcrawl.tests;
 
