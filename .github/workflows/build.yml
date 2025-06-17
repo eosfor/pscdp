@@ -5,11 +5,9 @@ on:
     branches: [ "dev" ]
   pull_request:
     branches: [ "dev" ]
-
   workflow_dispatch:
 
 jobs:
-
   build:
     runs-on: ubuntu-latest
     strategy:
@@ -21,15 +19,27 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Setup .NET Core SDK ${{ matrix.dotnet-version }}
+      - name: Setup .NET SDK ${{ matrix.dotnet-version }}
         uses: actions/setup-dotnet@v3
         with:
           dotnet-version: ${{ matrix.dotnet-version }}
-          
+
+      - name: Install Chromium
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y chromium
+
+      - name: Check Chromium Version
+        run: chromium --version
+
       - name: Install dependencies
         run: dotnet restore
+
       - name: Build
         run: dotnet build --configuration Debug
-      - name: Test
-        run: .devcontainer/start-chromium.sh && dotnet test --verbosity normal
 
+      - name: Run Tests (with Chromium)
+        run: |
+          .devcontainer/start-chromium.sh
+          sleep 2
+          dotnet test --verbosity normal
