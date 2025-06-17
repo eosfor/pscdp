@@ -17,7 +17,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\ChromeDevToolsRuntime\BaristaLabs.ChromeDevTools.Runtime.csproj" />
-    <ProjectReference Include="..\..\PSGraph\PSGraph.Common\PSGraph.Common.csproj" />
+    <ProjectReference Include="..\PSGraph\PSGraph.Common\PSGraph.Common.csproj" />
   </ItemGroup>
 
 </Project>
