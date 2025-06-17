@@ -32,6 +32,20 @@ jobs:
       - name: Check Chromium Version
         run: chromium --version
 
+      - name: Run Chromium
+        run: chromium --headless --no-sandbox --disable-gpu --remote-debugging-port=9222 &
+
+      - name: Wait for Chromium
+        run: |
+          for i in {1..10}; do
+            if nc -z localhost 9222; then
+              echo "Chromium is up!"
+              break
+            fi
+            echo "Waiting for Chromium..."
+            sleep 1
+          done
+
       - name: Install dependencies
         run: dotnet restore
 
@@ -39,7 +53,4 @@ jobs:
         run: dotnet build --configuration Debug
 
       - name: Run Tests (with Chromium)
-        run: |
-          .devcontainer/start-chromium.sh
-          sleep 2
-          dotnet test --verbosity normal
+        run: dotnet test --verbosity normal
