@@ -15,15 +15,16 @@ public class QuickCrawler
     private readonly ConcurrentDictionary<string, int> _visited = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, int> _planned = new(StringComparer.OrdinalIgnoreCase);
     private ConcurrentBag<ProcessedUrlData> _capturedEvents = new ConcurrentBag<ProcessedUrlData>();
-    private ILogger<QuickCrawler> _logger;
+    private ILogger _logger;
     private PSGraph.Model.PsBidirectionalGraph _graph = new PSGraph.Model.PsBidirectionalGraph();
 
     public List<ProcessedUrlData> CapturedEvents => _capturedEvents.ToList();
     public PsBidirectionalGraph Graph => _graph;
 
-    private Uri _baseUri;
+    private Uri _baseUri = default!;
     private int _pendingCount;
     private readonly object _dequeueLock = new object();
+    public event Action<int, int>? ProgressChanged;
 
     // Configuration parameters
     //TODO: make these configurable via constructor or properties or from outside
@@ -33,11 +34,11 @@ public class QuickCrawler
     private int _maxReachedDepth = 0;
 
     private int _maxDegreeOfParallelism = 4;
-    private int _boundedCapacity = 1000;
+    private int _boundedCapacity = 2000;
 
     public ConcurrentDictionary<string, int> VisitedUrls => _visited;
 
-    public QuickCrawler(ILogger<QuickCrawler>? logger = null)
+    public QuickCrawler(ILogger? logger = null)
     {
         _logger = logger ?? LoggerFactory
             .Create(builder => builder.AddConsole().SetMinimumLevel(LogLevel.Debug))
@@ -65,8 +66,11 @@ public class QuickCrawler
     }
 
 
-    public void StartCrawling(string Url, int maxDepth = 10)
+    public void StartCrawling(string Url, int maxDepth = 1, int maxDegreeOfParallelism = 4)
     {
+        _maxDepth = maxDepth;
+        _maxDegreeOfParallelism = maxDegreeOfParallelism;
+        
         _baseUri = new Uri(Url);
         _maxDepth = maxDepth;
         TryEnqueue(new CrawlTarget(Url, 0));
@@ -90,6 +94,8 @@ public class QuickCrawler
         }
     }
 
+    public bool IsCompleted => _messageQueue.Completion.IsCompleted;
+
 
     // Method to process incoming URLs for the ActionBlock
     private async Task ProcessUrl(CrawlTarget target)
@@ -97,7 +103,7 @@ public class QuickCrawler
         int nextDepth = 0;
         try
         {
-            using var processor = new PageProcessor(target.Url);
+            using var processor = new PageProcessor(target.Url, _logger);
             var links = await processor.ProcessPageAsync();
             var events = processor.CapturedEvents;
 
@@ -188,6 +194,10 @@ public class QuickCrawler
                 _messageQueue.Complete();
             }
         }
+
+        int completed = _visited.Count;
+        int total = _visited.Count + _planned.Count;
+        ProgressChanged?.Invoke(completed, total);
     }
 
     private bool TryEnqueue(CrawlTarget target)

@@ -13,7 +13,7 @@ public class PageProcessor : IDisposable
     private string _url { get; set; }
     private ChromeSession? _session;
     private DevToolsTarget? _browserTabTarget;
-    private ILogger<PageProcessor> _logger;
+    private ILogger _logger;
 
     private CancellationTokenSource _shouldCancel = new CancellationTokenSource();
 
@@ -31,7 +31,7 @@ public class PageProcessor : IDisposable
         _logger = LoggerFactory.Create(builder => builder.AddConsole().SetMinimumLevel(LogLevel.Debug)).CreateLogger<PageProcessor>();
     }
 
-    public PageProcessor(string url, ILogger<PageProcessor> logger)
+    public PageProcessor(string url, ILogger logger)
     {
         _url = url;
         _logger = logger;

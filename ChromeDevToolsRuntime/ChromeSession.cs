@@ -226,7 +226,6 @@ namespace BaristaLabs.ChromeDevTools.Runtime
                 if (result.MessageType == WebSocketMessageType.Close)
                 {
                     LogTrace("WebSocket is closed");
-                    //Console.WriteLine("🔌 WebSocket закрыт.");
                     break;
                 }
 
