@@ -14,3 +14,9 @@ Uses [BaristaLabs generator](https://github.com/eosfor/chrome-dev-tools-generato
 ```pwsh
 $res = Start-Crawling -Url "https://azazello.darkcity.dev" -Depth 1
 ```
+
+## Demo
+
+The demo shows how all this works together with [PSQuickGraph](https://www.powershellgallery.com/packages/PSQuickGraph/2.1.2) module
+
+![demo](./docs/img/crawlVegaDemo.gif)
