@@ -3,8 +3,16 @@ name: pscdp-dev-build
 on:
   push:
     branches: [ "dev" ]
+    paths-ignore:
+      - '**/README.md'
+      - '**/.gitignore'
+      - 'docs/**'
   pull_request:
     branches: [ "dev" ]
+    paths-ignore:
+      - '**/README.md'
+      - 'docs/**'
+
   workflow_dispatch:
 
 jobs:
