@@ -6,7 +6,7 @@ on:
 
 jobs:
 
-  build:
+  publish:
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -37,7 +37,7 @@ jobs:
         run: dotnet restore
       - name: Build
         run: dotnet build
-      - name: Test
+      - name: Run dotnet tests
         run: dotnet test --verbosity normal
       - name: dotnet publish
         run: dotnet publish -o "./pscdp"
