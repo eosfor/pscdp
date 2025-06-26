@@ -19,4 +19,4 @@ $res = Start-Crawling -Url "https://azazello.darkcity.dev" -Depth 1
 
 The demo shows how all this works together with [PSQuickGraph](https://www.powershellgallery.com/packages/PSQuickGraph/2.1.2) module
 
-![demo](./docs/img/crawlVegaDemo.gif)
+![demo](./docs/img/crawlVega2.gif)
