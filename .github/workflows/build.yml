@@ -1,4 +1,4 @@
-name: psgraph-dev-build
+name: pscdp-dev-build
 
 on:
   push:
