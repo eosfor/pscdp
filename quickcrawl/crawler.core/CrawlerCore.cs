@@ -7,6 +7,8 @@ using System.Threading.Tasks.Dataflow;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using PSGraph.Model;
+using BaristaLabs.ChromeDevTools.Runtime.Network;
+using System.Dynamic;
 
 public class QuickCrawler
 {
@@ -70,7 +72,7 @@ public class QuickCrawler
     {
         _maxDepth = maxDepth;
         _maxDegreeOfParallelism = maxDegreeOfParallelism;
-        
+
         _baseUri = new Uri(Url);
         _maxDepth = maxDepth;
         TryEnqueue(new CrawlTarget(Url, 0));
@@ -92,6 +94,8 @@ public class QuickCrawler
         {
             await _messageQueue.Completion;
         }
+
+        BuildResultingGraph();
     }
 
     public bool IsCompleted => _messageQueue.Completion.IsCompleted;
@@ -100,42 +104,43 @@ public class QuickCrawler
     // Method to process incoming URLs for the ActionBlock
     private async Task ProcessUrl(CrawlTarget target)
     {
-        int nextDepth = 0;
+
         try
         {
             using var processor = new PageProcessor(target.Url, _logger);
             var links = await processor.ProcessPageAsync();
             var events = processor.CapturedEvents;
 
-            var processedData = new ProcessedUrlData(target.Url, events);
+            var processedData = new ProcessedUrlData(target, events, links);
             _capturedEvents.Add(processedData);
 
-            var graphSourceNode = new PSVertex(target.Url);
-            _graph.AddVertex(graphSourceNode);
+            // var graphSourceNode = new PSVertex(target.Url);
+            // _graph.AddVertex(graphSourceNode);
 
+            //int nextDepth = 0;
             foreach (var rawLink in links)
             {
                 var normalizedLink = NormalizeLink(rawLink);
-                nextDepth = IsInternalLink(normalizedLink, _baseUri) ? target.Depth : target.Depth + 1;
+                int nextDepth = IsInternalLink(normalizedLink, _baseUri) ? target.Depth : target.Depth + 1;
 
                 bool enqued = TryEnqueue(new CrawlTarget(normalizedLink, nextDepth));
 
-                if (enqued)
-                {
-                    _logger.LogInformation("Adding link {Link} at depth {Depth}, to the graph", normalizedLink, nextDepth);
-                    var newVertex = new PSVertex(normalizedLink);
-                    var newEdge = new PSEdge(graphSourceNode, newVertex, new PSEdgeTag("CrawlEdge"));
+                // if (enqued)
+                // {
+                //     _logger.LogInformation("Adding link {Link} at depth {Depth}, to the graph", normalizedLink, nextDepth);
+                //     var newVertex = new PSVertex(normalizedLink);
+                //     var newEdge = new PSEdge(graphSourceNode, newVertex, new PSEdgeTag("CrawlEdge"));
 
-                    var addOpResult = _graph.AddVertex(newVertex);
-                    _logger.LogInformation("Adding vertex {v}: {result}", newVertex, addOpResult);
+                //     var addOpResult = _graph.AddVertex(newVertex);
+                //     _logger.LogInformation("Adding vertex {v}: {result}", newVertex, addOpResult);
 
-                    addOpResult = _graph.AddEdge(newEdge);
-                    _logger.LogInformation("Adding edge from {Source} to {Target}: {result}", graphSourceNode, newVertex, addOpResult);
-                }
-                else
-                {
-                    _logger.LogInformation("Skipping graph for link {Link} at depth {Depth}, already added", normalizedLink, nextDepth);
-                }
+                //     addOpResult = _graph.AddEdge(newEdge);
+                //     _logger.LogInformation("Adding edge from {Source} to {Target}: {result}", graphSourceNode, newVertex, addOpResult);
+                // }
+                // else
+                // {
+                //     _logger.LogInformation("Skipping graph for link {Link} at depth {Depth}, already added", normalizedLink, nextDepth);
+                // }
             }
         }
         catch (Exception ex)
@@ -150,6 +155,47 @@ public class QuickCrawler
 
         _logger.LogInformation("Finished processing URL: {Url} at depth {Depth}", target.Url, target.Depth);
         _logger.LogInformation("Max reached depth {Depth}", _maxReachedDepth);
+    }
+
+    public void BuildResultingGraph()
+    {
+
+        foreach (var row in _capturedEvents)
+        {
+            var graphSourceNode = new PSVertex(NormalizeLink(row.page.Url));
+            ((IDictionary<string, object?>)graphSourceNode.Metadata)["group"] = row.page.Depth;
+
+            _graph.AddVertex(graphSourceNode);
+
+            foreach (var link in row.links)
+            {
+                var normalizedLink = NormalizeLink(link);
+                int nextDepth = IsInternalLink(normalizedLink, _baseUri) ? row.page.Depth : row.page.Depth + 1;
+
+                var graphTargetNode = new PSVertex(NormalizeLink(link));
+                ((IDictionary<string, object?>)graphTargetNode.Metadata)["group"] = nextDepth;
+
+                var newEdge = new PSEdge(graphSourceNode, graphTargetNode, new PSEdgeTag("LinkEdge"));
+
+                var addOpResult = _graph.AddVertex(graphTargetNode);
+                addOpResult = _graph.AddEdge(newEdge);
+            }
+
+            foreach (var evt in row.events)
+            {
+                if (evt is RequestWillBeSentEvent)
+                {
+                    var graphTargetNode = new PSVertex((evt as RequestWillBeSentEvent).Request.Url, evt);
+                    ((IDictionary<string, object?>)graphTargetNode.Metadata)["group"] = _maxReachedDepth + 1;
+                    
+                    var newEdge = new PSEdge(graphSourceNode, graphTargetNode, new PSEdgeTag("EventEdge"));
+
+                    var addOpResult = _graph.AddVertex(graphTargetNode);
+                    addOpResult = _graph.AddEdge(newEdge);
+                }
+            }
+        }
+
     }
 
     private bool IsInternalLink(string link, Uri baseUri)

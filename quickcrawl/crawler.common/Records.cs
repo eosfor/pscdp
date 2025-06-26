@@ -6,6 +6,6 @@ namespace quickcrawl;
 
 public record CrawlTarget(string Url, int Depth);
 
-public record ProcessedUrlData(string url, List<IEvent> events);
+public record ProcessedUrlData(CrawlTarget page, List<IEvent> events, List<string> links);
 
 public record Result(PsBidirectionalGraph Graph, List<ProcessedUrlData> CapturedEvents);

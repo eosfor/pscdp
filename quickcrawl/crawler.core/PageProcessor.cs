@@ -159,7 +159,7 @@ public class PageProcessor : IDisposable
 
     private void OnSetChildNodesEvent(SetChildNodesEvent e)
     {
-        _capturedEvents.Add(e);
+        //_capturedEvents.Add(e);
         foreach (var node in e.Nodes)
         {
             _nodeDictionary.AddOrUpdate(node.NodeId, node, (id, previousNode) => node);
@@ -168,14 +168,14 @@ public class PageProcessor : IDisposable
 
     private void OnDocumentUpdated(DocumentUpdatedEvent e)
     {
-        _capturedEvents.Add(e);
+        //_capturedEvents.Add(e);
         _nodeDictionary.Clear();
         _nodeDictionary.Clear();
     }
 
     private void OnRequestFinished(LoadingFinishedEvent e)
     {
-        _capturedEvents.Add(e);
+        //_capturedEvents.Add(e);
         string json = JsonConvert.SerializeObject(e, Formatting.Indented);
         _logger.LogDebug("Request finished:\n{Json}", json);
         //throw new NotImplementedException();
@@ -191,7 +191,7 @@ public class PageProcessor : IDisposable
 
     private void OnFrameStoppedLoadingAsync(FrameStoppedLoadingEvent e)
     {
-        _capturedEvents.Add(e);
+        //_capturedEvents.Add(e);
         string json = JsonConvert.SerializeObject(e, Formatting.Indented);
         _logger.LogDebug("Frame stopped loading:\n{Json}", json);
         _pageLoadEventFlag?.TrySetResult(true);
@@ -200,7 +200,7 @@ public class PageProcessor : IDisposable
 
     private void OnFrameStartedLoadingAsync(FrameStartedLoadingEvent e)
     {
-        _capturedEvents.Add(e);
+        //_capturedEvents.Add(e);
         _pageLoadEventFlag = new(TaskCreationOptions.RunContinuationsAsynchronously);
         string json = JsonConvert.SerializeObject(e, Formatting.Indented);
         _logger.LogDebug("Frame started loading:\n{Json}", json);
@@ -209,7 +209,7 @@ public class PageProcessor : IDisposable
 
     private void OnLoadEventFiredEventAsync(LoadEventFiredEvent e)
     {
-        _capturedEvents.Add(e);
+        //_capturedEvents.Add(e);
         string json = JsonConvert.SerializeObject(e, Formatting.Indented);
         _logger.LogDebug("Load event fired:\n{Json}", json);
         //throw new NotImplementedException();
@@ -217,7 +217,7 @@ public class PageProcessor : IDisposable
 
     private void OnFrameNavigatedAsync(FrameNavigatedEvent e)
     {
-        _capturedEvents.Add(e);
+        //_capturedEvents.Add(e);
         string json = JsonConvert.SerializeObject(e, Formatting.Indented);
         _logger.LogDebug("Frame navigated:\n{Json}", json);
         //throw new NotImplementedException();

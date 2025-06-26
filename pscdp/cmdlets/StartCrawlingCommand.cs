@@ -56,7 +56,7 @@ public class StartCrawlingCommand : PSCmdlet
                 PercentComplete = percent
             });
         }
-
+        _crawler.BuildResultingGraph();
         WriteObject(new Result(_crawler.Graph, _crawler.CapturedEvents), false);
     }
 
